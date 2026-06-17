@@ -7,12 +7,13 @@ mileage messages into a confirmed, tax-ready ledger and an accountant-ready CSV.
 Postgres · deploys on Railway from GitHub.
 
 <!-- VERSION:START — auto-generated from CHANGELOG.md by .githooks/pre-push; do not edit by hand -->
-![Version](https://img.shields.io/badge/version-0.7.0-blue) ![Changelog](https://img.shields.io/badge/changelog-CHANGELOG.md-informational)
+![Version](https://img.shields.io/badge/version-0.7.1-blue) ![Changelog](https://img.shields.io/badge/changelog-CHANGELOG.md-informational)
 
 ### Version history
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **0.7.1** | 2026-06-17 | Production-safety patch for destructive chat helpers, privacy copy, and data deletion. |
 | **0.7.0** | 2026-06-11 | Make the WhatsApp transport pluggable so the app isn't hard-wired to Twilio. |
 | **0.6.0** | 2026-06-09 | Richer mileage edit menu, and a fix so editing no longer loses the period. (PR #17) |
 | **0.5.0** | 2026-06-09 | Flows F–K: summaries, Excel export pack, shared period picker, settings hub, access status, graceful help, and the legal/data-rights flow. (PRs #9–#16) |

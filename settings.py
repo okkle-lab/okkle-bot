@@ -191,7 +191,7 @@ def handle(db, user, number, body) -> bool:
     state, _, payload = user.settings_state.partition(":")
 
     # Universal escape hatches.
-    if low in ("done", "exit", "quit"):
+    if low == "done" or (config.DEBUG_COMMANDS and low in ("exit", "quit")):
         _go(user, None)
         db.commit()
         wa.send_whatsapp(number, "Settings closed. Send your miles any time. 👍")
@@ -304,6 +304,19 @@ _DATA_RIGHTS_MENU = (
 )
 
 
+def _delete_data_prompt() -> str:
+    return (
+        "Delete your data?\n\n"
+        "This will remove your stored records, draft records, settings, account "
+        "profile and export links from the service.\n\n"
+        "If you message again later, you'll start setup from scratch.\n\n"
+        "Some limited information may still be kept by our providers, or where "
+        "required for legal, security, accounting or technical reasons.\n\n"
+        "This cannot be undone.\n\n"
+        + _numbered(["Confirm delete", "Cancel"])
+    )
+
+
 def _h_data_rights(db, user, number, low, payload):
     if low in ("1", "export my data", "export"):
         _data_download(db, user, number)
@@ -318,12 +331,7 @@ def _h_data_rights(db, user, number, low, payload):
     elif low in ("3", "delete my data", "delete"):
         _go(user, "delete_confirm")
         db.commit()
-        wa.send_whatsapp(
-            number,
-            "Delete your stored records?\n\nThis will remove your confirmed records "
-            "and settings from the service.\n\nSome limited information may be kept "
-            "for legal, security, accounting or technical reasons.\n\n"
-            + _numbered(["Confirm delete", "Cancel"]))
+        wa.send_whatsapp(number, _delete_data_prompt())
     elif low in ("4", "support"):
         _go(user, "support")
         db.commit()
@@ -396,12 +404,7 @@ def _h_data(db, user, number, low, payload):
     elif low in ("2", "delete my data", "delete"):
         _go(user, "delete_confirm")
         db.commit()
-        wa.send_whatsapp(
-            number,
-            "Delete your stored records?\n\n"
-            "This will remove your confirmed records and settings from the service.\n\n"
-            "This cannot be undone.\n\n"
-            + _numbered(["Confirm delete", "Cancel"]))
+        wa.send_whatsapp(number, _delete_data_prompt())
     elif low in ("3", "back", "cancel"):
         _back_to_menu(db, user, number)
     else:
@@ -411,15 +414,14 @@ def _h_data(db, user, number, low, payload):
 def _h_delete_confirm(db, user, number, low, payload):
     if low in ("1", "confirm delete", "confirm", "yes"):
         from models import Record, ExportLink
-        db.query(Record).filter(Record.user_id == user.id).delete()
-        db.query(ExportLink).filter(ExportLink.user_id == user.id).delete()
-        user.reminder_status = "off"
-        _go(user, None)
+        db.query(Record).filter(Record.user_id == user.id).delete(synchronize_session=False)
+        db.query(ExportLink).filter(ExportLink.user_id == user.id).delete(synchronize_session=False)
+        db.delete(user)
         db.commit()
         wa.send_whatsapp(
             number,
-            "Your data deletion request has been received.\n\n"
-            "Your records will be deleted according to our data deletion process.")
+            "Your data has been deleted from the service.\n\n"
+            "If you message again later, you'll start setup from scratch.")
     else:
         wa.send_whatsapp(number, "No change made — your records are safe.")
         _back_to_menu(db, user, number)
@@ -953,11 +955,7 @@ def _nl_intent(db, user, number, low) -> bool:
     if "delete" in low and ("data" in low or "record" in low or "account" in low):
         _go(user, "delete_confirm")
         db.commit()
-        wa.send_whatsapp(
-            number,
-            "Delete your stored records?\n\nThis will remove your confirmed records "
-            "and settings from the service.\n\nThis cannot be undone.\n\n"
-            + _numbered(["Confirm delete", "Cancel"]))
+        wa.send_whatsapp(number, _delete_data_prompt())
         return True
 
     # "I use two cars" — same type, no new setting needed.

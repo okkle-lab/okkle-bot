@@ -19,8 +19,8 @@ In the chat:
     /help                show these commands
     quit / exit / /q     leave the harness, back to the terminal (or Ctrl-D)
 
-Note: "quit"/"exit" close the harness. To test the bot's own in-conversation
-exit keyword, type "end" — that passes through to the bot.
+Note: "quit"/"exit" close the harness. Destructive/in-conversation debug helper
+commands are disabled unless DEBUG_COMMANDS=true is set.
 """
 import os
 import sys
