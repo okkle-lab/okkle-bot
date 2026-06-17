@@ -130,9 +130,11 @@ TERMS_SUMMARY = (
 
 PRIVACY_SUMMARY = (
     "Privacy Notice (summary):\n\n"
-    "• I store only the records you confirm. Earnings screenshots and receipts are "
-    "never kept — I read them, then discard the image.\n"
-    "• Your data is used to build your summaries and export, nothing else.\n"
+    "• I use your messages and photos to help extract record details.\n"
+    "• Earnings screenshots and receipts are processed to read the details, then "
+    "the images are not kept.\n"
+    "• I may temporarily store draft details while you confirm, edit or delete them.\n"
+    "• Confirmed records are used to build your summaries and exports.\n"
     "• You can export or delete your data anytime from settings.\n\n"
     "Reply 3 to accept and continue."
 )
@@ -403,8 +405,9 @@ def handle_inbound(params: dict) -> None:
 
         user, created = get_or_create_user(db, number)
 
-        # Testing helper: wipe this user's data and restart onboarding from scratch.
-        if (params.get("Body") or "").strip().lower() == "restart":
+        # Debug helper: wipe this user's data and restart onboarding from scratch.
+        # Disabled by default because it is destructive.
+        if config.DEBUG_COMMANDS and body.lower() == "restart":
             db.query(Record).filter(Record.user_id == user.id).delete()
             db.query(ExportLink).filter(ExportLink.user_id == user.id).delete()
             db.delete(user)
@@ -414,12 +417,11 @@ def handle_inbound(params: dict) -> None:
             _start_onboarding(db, user, number)
             return
 
-        # Testing helper: bail out of any in-progress step (a pending record, an
+        # Debug helper: bail out of any in-progress step (a pending record, an
         # edit, or a "which vehicle?" prompt) back to a clean idle state, without
-        # deleting confirmed history. Works from any state — unlike CANCEL, which
-        # only works mid-edit. (RESTART wipes everything; EXIT just clears the
-        # current interaction.)
-        if (params.get("Body") or "").strip().lower() in ("exit", "quit", "end"):
+        # deleting confirmed history. Disabled in production; end users can simply
+        # close WhatsApp.
+        if config.DEBUG_COMMANDS and body.lower() in ("exit", "quit", "end"):
             cleared = (
                 db.query(Record)
                 .filter(

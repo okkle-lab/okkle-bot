@@ -38,6 +38,21 @@ deployed on Railway.
 
 ---
 
+## [0.7.1] — 2026-06-17
+
+Production-safety patch for destructive chat helpers, privacy copy, and data deletion.
+
+### Changed
+- Hidden destructive/testing chat helpers behind `DEBUG_COMMANDS=false` by default:
+  `RESTART` no longer wipes a user's data in production, and `EXIT`/`QUIT`/`END`
+  no longer clear in-progress conversations for end users.
+- Privacy and data-deletion copy now reflects the actual bot behaviour: raw
+  screenshots/receipts are not saved, draft extracted details may be stored while
+  users confirm/edit/delete them, and confirmed deletion removes the user's account
+  profile as well as records and export links.
+
+---
+
 ## [0.7.0] — 2026-06-11
 
 Make the WhatsApp transport pluggable so the app isn't hard-wired to Twilio.

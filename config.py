@@ -43,6 +43,10 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./courier.db")
 # Below this confidence the user is warned to check the value carefully.
 CONFIDENCE_WARN_THRESHOLD = float(os.environ.get("CONFIDENCE_WARN_THRESHOLD", "0.6"))
 
+# --- Development/testing helpers ---
+# Enables destructive chat-only helper commands such as RESTART. Keep false in production.
+DEBUG_COMMANDS = os.environ.get("DEBUG_COMMANDS", "false").lower() in ("1", "true", "yes")
+
 # --- Weekly reminder ---
 # In-process scheduler that nudges couriers to log their miles.
 REMINDERS_ENABLED = os.environ.get("REMINDERS_ENABLED", "true").lower() in ("1", "true", "yes")
