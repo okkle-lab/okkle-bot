@@ -368,23 +368,29 @@ def export_csv(token: str):
         # Expire links after 24 hours.
         age = now() - link.created_at.replace(tzinfo=dt.timezone.utc)
         if age > dt.timedelta(hours=24):
+            db.delete(link)
+            db.commit()
             return PlainTextResponse("Link expired.", status_code=410)
         today = dt.date.today().isoformat()
         ps, pe = getattr(link, "period_start", None), getattr(link, "period_end", None)
         if getattr(link, "fmt", "xlsx") == "csv":
-            content = export.build_csv(db, link.user_id)
-            return Response(
+            content = export.build_csv(db, link.user_id, ps, pe)
+            response = Response(
                 content=content, media_type="text/csv",
                 headers={"Content-Disposition":
                          f'attachment; filename="courier-records-{today}.csv"'},
             )
-        data = export.build_xlsx(db, link.user_id, db.get(User, link.user_id), ps, pe)
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition":
-                     f'attachment; filename="courier-record-pack-{today}.xlsx"'},
-        )
+        else:
+            data = export.build_xlsx(db, link.user_id, db.get(User, link.user_id), ps, pe)
+            response = Response(
+                content=data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition":
+                         f'attachment; filename="courier-record-pack-{today}.xlsx"'},
+            )
+        db.delete(link)
+        db.commit()
+        return response
     finally:
         db.close()
 
@@ -1391,7 +1397,7 @@ def _platform_picker(lead: str) -> str:
 
 def _recent_income_duplicate(db, user_id, platform, amount) -> Record | None:
     """A confirmed income record this week with the same platform and amount."""
-    week_ago = (dt.date.today() - dt.timedelta(days=7)).isoformat()
+    week_start, week_end = _period_range(False)
     return (
         db.query(Record)
         .filter(
@@ -1400,7 +1406,8 @@ def _recent_income_duplicate(db, user_id, platform, amount) -> Record | None:
             Record.confirmation_status.in_(["confirmed", "estimated"]),
             Record.platform_or_vendor == platform,
             Record.amount == amount,
-            Record.record_date >= week_ago,
+            Record.record_date >= week_start.isoformat(),
+            Record.record_date <= week_end.isoformat(),
         )
         .first()
     )

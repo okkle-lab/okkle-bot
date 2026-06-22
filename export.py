@@ -46,25 +46,6 @@ def _miles_by_vehicle(rows: list[Record], default_type: str | None) -> dict[str,
     return agg
 
 
-def build_csv(db: Session, user_id: int) -> str:
-    rows = _exportable(db, user_id, include_review=True)
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(CSV_COLUMNS)
-    for r in rows:
-        in_total = "no" if r.confirmation_status == "review_required" else "yes"
-        writer.writerow([
-            r.record_date, r.period_start or "", r.period_end or "",
-            r.entry_frequency or "", r.record_type, r.vehicle_type or "",
-            r.platform_or_vendor,
-            f"{r.amount:.2f}" if r.amount is not None else "",
-            f"{r.miles:.1f}" if r.miles is not None else "",
-            r.category, r.source_type, r.confirmation_status, in_total,
-            f"{r.confidence:.2f}", r.original_media_url, r.notes,
-        ])
-    return buf.getvalue()
-
-
 def weekly_summary(db: Session, user: User) -> str:
     """A short text recap to send over WhatsApp (the 'tax-saved counter' hook).
 
@@ -123,14 +104,31 @@ def _fmt(d: "_dt.date") -> str:
     return f"{d.day} {d:%b %Y}"
 
 
-def _streak(all_dates: list[str], monthly: bool) -> int:
+def _record_bounds(row: Record) -> tuple[str, str]:
+    """Effective date range for reporting/export.
+
+    Weekly/monthly entries should be grouped by their stored period when present,
+    while older one-day entries fall back to record_date.
+    """
+    point = row.record_date or ""
+    return (row.period_start or point, row.period_end or point)
+
+
+def _overlaps(row: Record, start_iso: str, end_iso: str) -> bool:
+    row_start, row_end = _record_bounds(row)
+    if not row_start or not row_end:
+        return False
+    return row_start <= end_iso and start_iso <= row_end
+
+
+def _streak(rows: list[Record], monthly: bool) -> int:
     """Count consecutive periods (back from now) with at least one record."""
     count = 0
     ref = _dt.date.today()
     for _ in range(60):
         start, end = _period_range(monthly, ref)
         s, e = start.isoformat(), end.isoformat()
-        if any(s <= d <= e for d in all_dates):
+        if any(_overlaps(r, s, e) for r in rows):
             count += 1
             ref = start - _dt.timedelta(days=1)
         else:
@@ -153,7 +151,7 @@ def summary(db: Session, user: User, period: dict | None = None) -> str:
     period_line = f"Period: {_fmt(start)} – {_fmt(end)}"
 
     all_rows = _exportable(db, user.id)
-    rows = [r for r in all_rows if s_iso <= (r.record_date or "") <= e_iso]
+    rows = [r for r in all_rows if _overlaps(r, s_iso, e_iso)]
     income = [r for r in rows if r.record_type == "income"]
     mileage = [r for r in rows if r.record_type == "mileage"]
     expenses = [r for r in rows if r.record_type == "expense"]
@@ -168,7 +166,7 @@ def summary(db: Session, user: User, period: dict | None = None) -> str:
     miles_total = sum(by_vehicle.values())
     deduction = sum(tax.mileage_deduction(m, vt) for vt, m in by_vehicle.items())
     benefit = tax.tax_benefit(deduction, user.tax_rate) if user.tax_rate else 0.0
-    streak = _streak([r.record_date for r in all_rows], monthly)
+    streak = _streak(all_rows, monthly)
     streak_unit = "month" if monthly else "week"
 
     def _by_platform():
@@ -248,8 +246,28 @@ def summary(db: Session, user: User, period: dict | None = None) -> str:
 def _records_for_export(db: Session, user_id: int, start: str | None, end: str | None):
     rows = _exportable(db, user_id, include_review=True)
     if start and end:
-        rows = [r for r in rows if start <= (r.record_date or "") <= end]
+        rows = [r for r in rows if _overlaps(r, start, end)]
     return rows
+
+
+def build_csv(db: Session, user_id: int,
+              start: str | None = None, end: str | None = None) -> str:
+    rows = _records_for_export(db, user_id, start, end)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(CSV_COLUMNS)
+    for r in rows:
+        in_total = "no" if r.confirmation_status == "review_required" else "yes"
+        writer.writerow([
+            r.record_date, r.period_start or "", r.period_end or "",
+            r.entry_frequency or "", r.record_type, r.vehicle_type or "",
+            r.platform_or_vendor,
+            f"{r.amount:.2f}" if r.amount is not None else "",
+            f"{r.miles:.1f}" if r.miles is not None else "",
+            r.category, r.source_type, r.confirmation_status, in_total,
+            f"{r.confidence:.2f}", r.original_media_url, r.notes,
+        ])
+    return buf.getvalue()
 
 
 def build_xlsx(db: Session, user_id: int, user: User | None = None,
@@ -337,9 +355,9 @@ def build_xlsx(db: Session, user_id: int, user: User | None = None,
 
 def earnings_summary(db: Session, user: User) -> str:
     """Flow D summary after confirming earnings: this-week totals per platform."""
-    import datetime as dt
-    week_ago = (dt.date.today() - dt.timedelta(days=7)).isoformat()
-    week_rows = [r for r in _exportable(db, user.id) if (r.record_date or "") >= week_ago]
+    start, end = _period_range(False)
+    s_iso, e_iso = start.isoformat(), end.isoformat()
+    week_rows = [r for r in _exportable(db, user.id) if _overlaps(r, s_iso, e_iso)]
 
     by_platform: dict[str, float] = {}
     for r in week_rows:
@@ -373,11 +391,11 @@ def earnings_summary(db: Session, user: User) -> str:
 
 def expense_summary(db: Session, user: User) -> str:
     """Flow E1 summary after confirming expenses: this-week expenses listed."""
-    import datetime as dt
-    week_ago = (dt.date.today() - dt.timedelta(days=7)).isoformat()
+    start, end = _period_range(False)
+    s_iso, e_iso = start.isoformat(), end.isoformat()
     rows = [
         r for r in _exportable(db, user.id)
-        if r.record_type == "expense" and (r.record_date or "") >= week_ago
+        if r.record_type == "expense" and _overlaps(r, s_iso, e_iso)
     ]
     lines = ["Expense added ✅\n", "This week's expenses for accountant review:"]
     total = 0.0
